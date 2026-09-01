@@ -10,6 +10,7 @@ MODEL = "claude-haiku-4-5"
 
 print("코퍼스 준비 중...")
 corpus, embeddings = notion_search.load_or_build()
+idf = notion_search.compute_idf(corpus)
 print(f"준비 완료 ({len(corpus)}개 청크)")
 
 TOOLS = [
@@ -19,7 +20,7 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "검색할 질문이나 키워드"}
+                "query": {"type": "string", "description": "검색할 내용을 짧은 키워드가 아니라, 구체적이고 완전한 문장으로 작성하라"}
             },
             "required": ["query"],
         },
@@ -28,7 +29,7 @@ TOOLS = [
 
 def execute_tool(name: str, tool_input: dict) -> str:
     if name == "search_notion":
-        results = notion_search.search(tool_input["query"], corpus, embeddings, top_k=3)
+        results = notion_search.search(tool_input["query"], corpus, embeddings, idf, top_k=3)
         return "\n\n---\n\n".join([f"[{r['title']}]\n{r['text']}" for r in results])
     return f"알 수 없는 도구: {name}"
 

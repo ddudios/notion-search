@@ -1,6 +1,9 @@
-import sys
 import json
+import math
 import os
+import sys
+from collections import Counter
+
 from dotenv import load_dotenv
 from notion_client import Client
 from sentence_transformers import SentenceTransformer
@@ -84,7 +87,11 @@ def get_all_page_ids() -> list[dict]:
             start_cursor=cursor,
         )
         for page in response["results"]:
-            pages.append({"id": page["id"], "title": get_page_title(page)})
+            pages.append({
+                "id": page["id"],
+                "title": get_page_title(page),
+                "last_edited_time": page["last_edited_time"],
+            })
         if not response.get("has_more"):
             break
         cursor = response.get("next_cursor")
@@ -117,23 +124,52 @@ def build_corpus() -> list[dict]:
 CACHE_DIR = "cache"
 CORPUS_CACHE_PATH = os.path.join(CACHE_DIR, "corpus.json")
 EMBEDDINGS_CACHE_PATH = os.path.join(CACHE_DIR, "embeddings.npy")
+PAGE_META_PATH = os.path.join(CACHE_DIR, "page_meta.json")
 
 def load_or_build():
-    if os.path.exists(CORPUS_CACHE_PATH) and os.path.exists(EMBEDDINGS_CACHE_PATH):
-        print("캐시에서 불러오는 중...")
-        with open(CORPUS_CACHE_PATH, "r", encoding="utf-8") as f:
-            corpus = json.load(f)
-        embeddings = np.load(EMBEDDINGS_CACHE_PATH)
-        return corpus, embeddings
+    old_corpus, old_embeddings, old_meta = [], None, {}
 
-    print("캐시 없음, 새로 만드는 중...")
-    corpus = build_corpus()
-    embeddings = embed_corpus(corpus)
+    if os.path.exists(CORPUS_CACHE_PATH) and os.path.exists(EMBEDDINGS_CACHE_PATH):
+        with open(CORPUS_CACHE_PATH, "r", encoding="utf-8") as f:
+            old_corpus = json.load(f)
+        old_embeddings = np.load(EMBEDDINGS_CACHE_PATH)
+        if os.path.exists(PAGE_META_PATH):
+            with open(PAGE_META_PATH, "r", encoding="utf-8") as f:
+                old_meta = json.load(f)
+
+    current_pages = get_all_page_ids()
+    current_ids = {p["id"] for p in current_pages}
+    changed_pages = [
+        p for p in current_pages
+        if old_meta.get(p["id"]) != p["last_edited_time"]
+    ]
+    print(f"전체 {len(current_pages)}개 페이지 중 {len(changed_pages)}개 변경/신규 감지")
+
+    changed_ids = {p["id"] for p in changed_pages}
+    keep_mask = [doc["id"] in current_ids and doc["id"] not in changed_ids for doc in old_corpus]
+    kept_corpus = [doc for doc, keep in zip(old_corpus, keep_mask) if keep]
+    kept_embeddings = old_embeddings[keep_mask] if old_embeddings is not None and len(old_corpus) else None
+
+    new_corpus = []
+    for page in changed_pages:
+        for chunk_text in get_page_chunks(page["id"]):
+            new_corpus.append({"title": page["title"], "id": page["id"], "text": chunk_text})
+    new_embeddings = embed_corpus(new_corpus) if new_corpus else None
+
+    corpus = kept_corpus + new_corpus
+    if kept_embeddings is not None and new_embeddings is not None:
+        embeddings = np.vstack([kept_embeddings, new_embeddings])
+    elif new_embeddings is not None:
+        embeddings = new_embeddings
+    else:
+        embeddings = kept_embeddings
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(CORPUS_CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(corpus, f, ensure_ascii=False)
     np.save(EMBEDDINGS_CACHE_PATH, embeddings)
+    with open(PAGE_META_PATH, "w", encoding="utf-8") as f:
+        json.dump({p["id"]: p["last_edited_time"] for p in current_pages}, f, ensure_ascii=False)
 
     return corpus, embeddings
 
@@ -141,11 +177,32 @@ def embed_corpus(corpus: list[dict]) -> np.ndarray:
       texts = [doc["text"] for doc in corpus]
       return model.encode(texts, normalize_embeddings=True)
 
-def search(query: str, corpus: list[dict], embeddings: np.ndarray, top_k: int = 3) -> list[dict]:
+def compute_idf(corpus: list[dict]) -> dict:
+    doc_count = len(corpus)
+    doc_freq = Counter()
+    for doc in corpus:
+        for word in set(doc["text"].split()):
+            doc_freq[word] += 1
+    return {word: math.log(doc_count / freq) for word, freq in doc_freq.items()}
+
+def search(query: str, corpus: list[dict], embeddings: np.ndarray, idf: dict, top_k: int = 3) -> list[dict]:
     query_vec = model.encode([query], normalize_embeddings=True)[0]
-    scores = embeddings @ query_vec
-    top_indices = np.argsort(-scores)[:top_k]
-    return [{**corpus[i], "score": float(scores[i])} for i in top_indices]
+    embedding_scores = embeddings @ query_vec
+
+    length_factor = np.array([min(1.0, len(doc["text"]) / 30) for doc in corpus])
+    embedding_scores = embedding_scores * length_factor
+
+    query_words = set(query.replace("?", "").split())
+    keyword_scores = np.array([
+        sum(idf.get(w, 0) for w in query_words & set(doc["text"].split()))
+        for doc in corpus
+    ])
+    if keyword_scores.max() > 0:
+        keyword_scores = keyword_scores / keyword_scores.max()
+
+    final_scores = embedding_scores + 0.3 * keyword_scores
+    top_indices = np.argsort(-final_scores)[:top_k]
+    return [{**corpus[i], "score": float(final_scores[i])} for i in top_indices]
 
 if __name__ == "__main__":
     corpus, embeddings = load_or_build()
