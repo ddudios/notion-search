@@ -1,7 +1,7 @@
 [project]
-name = "04-rag-notion-search"
+name = "notion-search"
 version = "0.1.0"
-description = "Add your description here"
+description = "Local semantic search over a Notion workspace, wired as a Claude agent tool"
 authors = [
     { name = "ddudi", email = "ddudios@naver.com" }
 ]
@@ -13,10 +13,3 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "sentence-transformers>=6.0.1",
 ]
-
-[project.scripts]
-04-rag-notion-search = "04_rag_notion_search:main"
-
-[build-system]
-requires = ["uv_build>=0.12.7,<0.13.0"]
-build-backend = "uv_build"
