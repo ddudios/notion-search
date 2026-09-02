@@ -7,6 +7,12 @@ load_dotenv()
 
 client = anthropic.Anthropic()
 MODEL = "claude-haiku-4-5"
+SYSTEM_PROMPT = """당신은 사용자의 노션(Notion) 워크스페이스 내용을 기반으로 질문에 답하는 어시스턴트입니다.
+
+- 반드시 search_notion 도구로 검색한 결과에 근거해서만 답변하세요.
+- 검색 결과가 질문과 관련이 없거나 부실하면, 절대로 당신의 일반 지식으로 답을 지어내지 마세요.
+- 대신 "노션에서 관련 정보를 찾지 못했습니다"라고 솔직하게 답하세요.
+"""
 
 print("코퍼스 준비 중...")
 corpus, embeddings = notion_search.load_or_build()
@@ -40,6 +46,7 @@ def run(user_message: str) -> None:
         response = client.messages.create(
             model=MODEL,
             max_tokens=1024,
+            system=SYSTEM_PROMPT,
             tools=TOOLS,
             messages=messages,
         )
