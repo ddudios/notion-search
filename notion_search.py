@@ -206,22 +206,16 @@ def search(query: str, corpus: list[dict], embeddings: np.ndarray, idf: dict, to
 
 if __name__ == "__main__":
     corpus, embeddings = load_or_build()
-    if len(sys.argv) > 1:
-        query = " ".join(sys.argv[1:])
-        results = search(query, corpus, embeddings, top_k=3)
+    idf = compute_idf(corpus)
+    print(f"총 {len(corpus)}개 청크")
+    print("완료! 질문을 입력하세요 (종료: exit)")
+    while True:
+        query = input("> ")
+        if query == "exit":
+            break
+        if not query.strip():
+            continue
+        results = search(query, corpus, embeddings, idf, top_k=3)
         for r in results:
             print(f"\n[{r['title']}] (유사도 {r['score']:.3f})")
             print(r["text"][:200])
-    else:
-        print(f"총 {len(corpus)}개 청크")
-        print("완료! 질문을 입력하세요 (종료: exit)")
-        while True:
-            query = input("> ")
-            if query == "exit":
-                break
-            if not query.strip():
-                continue
-            results = search(query, corpus, embeddings, top_k=3)
-            for r in results:
-                print(f"\n[{r['title']}] (유사도 {r['score']:.3f})")
-                print(r["text"][:200])

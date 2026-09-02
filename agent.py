@@ -49,7 +49,7 @@ def run(user_message: str) -> None:
             final_text = next((b.text for b in response.content if b.type == "text"), "")
             print(f"\n===== 최종 답변 =====")
             print(final_text)
-            return
+            return final_text
 
         tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
         tool_results = []
