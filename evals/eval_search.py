@@ -1,3 +1,8 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import notion_search
 
 TEST_CASES = [
@@ -8,10 +13,11 @@ TEST_CASES = [
 
 def run_eval(top_k: int = 3) -> None:
     corpus, embeddings = notion_search.load_or_build()
+    idf = notion_search.compute_idf(corpus)
     correct = 0
 
     for case in TEST_CASES:
-        results = notion_search.search(case["question"], corpus, embeddings, top_k=top_k)
+        results = notion_search.search(case["question"], corpus, embeddings, idf, top_k=top_k)
         found_titles = [r["title"] for r in results]
         hit = case["expected_title"] in found_titles
         correct += hit

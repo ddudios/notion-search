@@ -1,3 +1,8 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import notion_search
 import agent
 from eval_scoped import AI_CONCEPT_TITLES
